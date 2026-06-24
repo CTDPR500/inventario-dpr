@@ -403,29 +403,30 @@ async function submit() {
   btn.disabled = true; btn.textContent = 'Guardando...';
 
   try {
-    const cur = current.qty||0;
-    const newQty = mode==='out' ? Math.max(0, cur-qty) : cur+qty;
-    const ns = newStatus(newQty);
-    const cvRaw = `{"${QTY_COL}":${newQty},"${STA_COL}":${ns}}`;
-    const cvEsc = cvRaw.replace(/\\/g,'\\\\').replace(/"/g,'\\"');
+    const isOut = mode === 'out';
+    const subitemName = `${isOut ? 'Retiro' : 'Restock'} - ${evento || 'Sin evento'} - ${persona}`;
+    
+    // Column to update: Amount Requested (out) or Restock (in)
+    const numCol = isOut ? 'numbers__1' : 'numbers5__1';
+    const deptEsc = dept.replace(/"/g, '\"');
+    const nameEsc = subitemName.replace(/"/g, '\"');
+    
+    const colVals = `{"${numCol}": ${qty}}`;
+    const colValsEsc = colVals.replace(/"/g, '\"');
 
-    await api(`mutation{change_multiple_column_values(item_id:${current.id},board_id:${BOARD},column_values:"${cvEsc}"){id}}`);
+    // Create subitem
+    await api(`mutation {
+      create_subitem(
+        parent_item_id: ${current.id},
+        item_name: "${nameEsc}",
+        column_values: "${colValsEsc}"
+      ) { id }
+    }`);
 
-    const accion = mode==='out'?'retiró':'añadió';
-    const nota = `${persona} ${accion} ${qty} unidad(es)${evento?` para "${evento}"`:''}${dept?` · Depto: ${dept}`:''}.  Nuevo total: ${newQty}.`;
-    const notaEsc = nota.replace(/\\/g,'\\\\').replace(/"/g,'\\"');
-    await api(`mutation{create_update(item_id:${current.id},body:"${notaEsc}"){id}}`);
-
-    const idx = items.findIndex(i=>i.id===current.id);
-    if (idx!==-1) {
-      items[idx].qty = newQty;
-      items[idx].status = newQty<=0?'Depleted':newQty<=20?'Low Inventory':'In stock';
-    }
     closeSheet();
-    updateStats();
-    render();
-    toast(mode==='out'?`✓ ${qty} retirado · Quedan ${newQty}`:`✓ ${qty} añadido · Total ${newQty}`,'ok');
+    toast(isOut ? `✓ Retiro de ${qty} registrado` : `✓ Restock de ${qty} registrado`, 'ok');
   } catch(e) {
+    console.error(e);
     toast('Error al guardar. Intenta de nuevo.','err');
   } finally {
     btn.disabled = false;
